@@ -1,0 +1,29 @@
+# DrawLikeMe - Dependencies
+# ========================
+
+# --- Core ---
+torch>=2.1.0
+torchvision>=0.16.0
+
+# --- Diffusion Models (Local GPU pipelines) ---
+diffusers>=0.27.0
+transformers>=4.38.0
+accelerate>=0.27.0
+safetensors>=0.4.0
+
+# --- ControlNet Preprocessors ---
+# controlnet_aux provides model-based lineart/depth/etc detectors
+# Optional: only needed for model-based preprocessors (extract_lineart_model)
+controlnet_aux>=0.0.7
+
+# --- Image Processing ---
+Pillow>=10.0.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+
+# --- Web UI ---
+gradio>=4.19.0
+
+# --- Cloud API (Method C) ---
+replicate>=0.25.0
+requests>=2.31.0

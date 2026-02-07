@@ -1,0 +1,34 @@
+"""
+DrawLikeMe pipelines.
+
+Heavy pipeline classes are imported lazily to avoid loading torch/diffusers
+when only preprocessors are needed (e.g., CPU-only preview mode).
+"""
+
+from pipelines.base import BasePipeline, StyleTransferResult
+from pipelines.preprocessors import extract_canny, extract_lineart
+
+
+def __getattr__(name: str):
+    """Lazy import for GPU-dependent pipeline classes."""
+    if name == "ControlNetIPAdapterPipeline":
+        from pipelines.controlnet_ipadapter import ControlNetIPAdapterPipeline
+        return ControlNetIPAdapterPipeline
+    if name == "InstantStylePipeline":
+        from pipelines.instantstyle import InstantStylePipeline
+        return InstantStylePipeline
+    if name == "ReplicateStyleTransferPipeline":
+        from pipelines.replicate_api import ReplicateStyleTransferPipeline
+        return ReplicateStyleTransferPipeline
+    raise AttributeError(f"module 'pipelines' has no attribute {name!r}")
+
+
+__all__ = [
+    "BasePipeline",
+    "StyleTransferResult",
+    "extract_canny",
+    "extract_lineart",
+    "ControlNetIPAdapterPipeline",
+    "InstantStylePipeline",
+    "ReplicateStyleTransferPipeline",
+]
