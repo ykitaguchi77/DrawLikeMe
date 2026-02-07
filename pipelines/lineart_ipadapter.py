@@ -1,23 +1,26 @@
 """
-Method A: ControlNet (Canny) + IP-Adapter Pipeline  [SDXL]
+Method C: Lineart ControlNet + IP-Adapter Pipeline  [SD 1.5]
 
-Structure preservation: Canny ControlNet on SDXL
-Style injection:        IP-Adapter Plus (CLIP ViT-H image features)
+Structure preservation: Lineart ControlNet (purpose-built for line drawings)
+Style injection:        IP-Adapter Plus (CLIP image features)
 
-The most established combination. Uses SDXL for high-resolution output.
-ControlNet conditioning scale is set high by default to prioritize
-anatomical accuracy in medical illustrations.
+SD 1.5 has the most mature Lineart ControlNet model
+(lllyasviel/control_v11p_sd15_lineart), which was specifically trained
+to understand and preserve line art structure - ideal for medical
+illustrations that rely on clean, precise lines.
+
+Trade-off vs SDXL: lower resolution (512px) but better lineart fidelity.
 """
 
 import torch
 from PIL import Image
 
 from config import (
-    SD_MODEL_ID,
-    CONTROLNET_CANNY_MODEL,
+    SD15_MODEL_ID,
+    CONTROLNET_LINEART_SD15_MODEL,
     IP_ADAPTER_MODEL,
-    IP_ADAPTER_SDXL_WEIGHT,
-    IP_ADAPTER_IMAGE_ENCODER,
+    IP_ADAPTER_SD15_WEIGHT,
+    IP_ADAPTER_SD15_IMAGE_ENCODER,
     DEFAULT_CONTROLNET_SCALE,
     DEFAULT_GUIDANCE_SCALE,
     DEFAULT_IP_ADAPTER_SCALE,
@@ -26,12 +29,12 @@ from config import (
     DEFAULT_NEGATIVE_PROMPT,
 )
 from pipelines.base import BasePipeline, StyleTransferResult
-from pipelines.preprocessors import extract_canny
+from pipelines.preprocessors import extract_lineart
 from utils.image_utils import prepare_image
 
 
-class ControlNetIPAdapterPipeline(BasePipeline):
-    """ControlNet Canny (structure) + IP-Adapter Plus (style) on SDXL."""
+class LineartIPAdapterPipeline(BasePipeline):
+    """Lineart ControlNet (structure) + IP-Adapter (style) on SD 1.5."""
 
     def __init__(self, device: str = "cuda"):
         self.device = device
@@ -39,14 +42,15 @@ class ControlNetIPAdapterPipeline(BasePipeline):
 
     @property
     def name(self) -> str:
-        return "ControlNet + IP-Adapter (SDXL)"
+        return "Lineart ControlNet + IP-Adapter (SD 1.5)"
 
     @property
     def description(self) -> str:
         return (
-            "Canny ControlNet extracts edges from the content image to preserve "
-            "anatomical structure. IP-Adapter Plus injects style features from the "
-            "reference illustration. High ControlNet scale ensures structural fidelity."
+            "Uses a Lineart-specialized ControlNet trained specifically for "
+            "line drawing preservation. Better at capturing fine lines and "
+            "structural details than Canny. Lower resolution (512px) than SDXL "
+            "methods but more precise lineart fidelity."
         )
 
     def _load_pipeline(self):
@@ -54,38 +58,28 @@ class ControlNetIPAdapterPipeline(BasePipeline):
             return
 
         from diffusers import (
-            StableDiffusionXLControlNetPipeline,
+            StableDiffusionControlNetPipeline,
             ControlNetModel,
-            AutoencoderKL,
         )
 
         controlnet = ControlNetModel.from_pretrained(
-            CONTROLNET_CANNY_MODEL,
-            torch_dtype=torch.float16,
-            variant="fp16",
-        )
-
-        vae = AutoencoderKL.from_pretrained(
-            "madebyollin/sdxl-vae-fp16-fix",
+            CONTROLNET_LINEART_SD15_MODEL,
             torch_dtype=torch.float16,
         )
 
-        self._pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
-            SD_MODEL_ID,
+        self._pipe = StableDiffusionControlNetPipeline.from_pretrained(
+            SD15_MODEL_ID,
             controlnet=controlnet,
-            vae=vae,
             torch_dtype=torch.float16,
-            variant="fp16",
         )
 
         self._pipe.load_ip_adapter(
             IP_ADAPTER_MODEL,
-            subfolder="sdxl_models",
-            weight_name=IP_ADAPTER_SDXL_WEIGHT,
-            image_encoder_folder=IP_ADAPTER_IMAGE_ENCODER,
+            subfolder="models",
+            weight_name=IP_ADAPTER_SD15_WEIGHT,
+            image_encoder_folder=IP_ADAPTER_SD15_IMAGE_ENCODER,
         )
 
-        # CPU offload to fit in less VRAM
         self._pipe.enable_model_cpu_offload()
 
     def transfer_style(
@@ -102,11 +96,12 @@ class ControlNetIPAdapterPipeline(BasePipeline):
     ) -> StyleTransferResult:
         self._load_pipeline()
 
-        content = prepare_image(content_image)
-        style = prepare_image(style_image)
+        # SD 1.5 works best at 512px
+        content = prepare_image(content_image, max_size=512)
+        style = prepare_image(style_image, max_size=512)
 
-        # Extract structure
-        canny_image = extract_canny(content)
+        # Extract lineart structure (DoG-based, lightweight)
+        lineart_image = extract_lineart(content)
 
         self._pipe.set_ip_adapter_scale(style_strength)
 
@@ -118,7 +113,7 @@ class ControlNetIPAdapterPipeline(BasePipeline):
         result = self._pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            image=canny_image,
+            image=lineart_image,
             ip_adapter_image=style,
             controlnet_conditioning_scale=controlnet_scale,
             num_inference_steps=num_steps,
@@ -134,8 +129,8 @@ class ControlNetIPAdapterPipeline(BasePipeline):
                 "ip_adapter_scale": style_strength,
                 "num_steps": num_steps,
                 "guidance_scale": guidance_scale,
-                "base_model": "SDXL",
-                "structure_extraction": "Canny",
+                "base_model": "SD 1.5",
+                "structure_extraction": "Lineart (DoG)",
             },
-            preprocessing_images={"canny_edges": canny_image},
+            preprocessing_images={"lineart": lineart_image},
         )

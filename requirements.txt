@@ -12,9 +12,9 @@ accelerate>=0.27.0
 safetensors>=0.4.0
 
 # --- ControlNet Preprocessors ---
-# controlnet_aux provides model-based lineart/depth/etc detectors
-# Optional: only needed for model-based preprocessors (extract_lineart_model)
-controlnet_aux>=0.0.7
+# Optional: only needed for model-based lineart detector (extract_lineart_model)
+# Uncomment if you want higher-quality lineart extraction:
+# controlnet_aux>=0.0.7
 
 # --- Image Processing ---
 Pillow>=10.0.0
@@ -23,7 +23,3 @@ numpy>=1.24.0
 
 # --- Web UI ---
 gradio>=4.19.0
-
-# --- Cloud API (Method C) ---
-replicate>=0.25.0
-requests>=2.31.0

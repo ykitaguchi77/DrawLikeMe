@@ -1,4 +1,11 @@
-"""Image preprocessors for structure extraction (Canny, Lineart, etc.)."""
+"""
+Image preprocessors for structure extraction.
+
+Medical illustrations require high-fidelity structure extraction to preserve
+anatomical accuracy. Multiple extraction methods are provided so users can
+choose the one that best captures the structural detail of their specific
+illustration type.
+"""
 
 import cv2
 import numpy as np
@@ -7,19 +14,14 @@ from PIL import Image
 
 def extract_canny(
     image: Image.Image,
-    low_threshold: int = 100,
+    low_threshold: int = 80,
     high_threshold: int = 200,
 ) -> Image.Image:
     """
     Extract Canny edges from an image.
 
-    Args:
-        image: Input PIL Image (RGB).
-        low_threshold: Lower hysteresis threshold.
-        high_threshold: Upper hysteresis threshold.
-
-    Returns:
-        PIL Image of Canny edges (white edges on black background).
+    Good for: sharp, well-defined edges in medical diagrams and illustrations.
+    Lower threshold captures finer anatomical detail.
     """
     img_array = np.array(image)
     gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
@@ -29,26 +31,17 @@ def extract_canny(
 
 def extract_lineart(
     image: Image.Image,
-    gaussian_sigma: float = 6.0,
-    intensity_threshold: int = 8,
+    gaussian_sigma: float = 4.0,
+    intensity_threshold: int = 6,
 ) -> Image.Image:
     """
-    Extract lineart from an image using Difference of Gaussians (DoG).
+    Extract lineart using Difference of Gaussians (DoG).
 
-    This is a lightweight alternative to the full controlnet_aux LineartDetector
-    that doesn't require downloading a model. For production use, prefer the
-    model-based detector from controlnet_aux.
-
-    Args:
-        image: Input PIL Image (RGB).
-        gaussian_sigma: Sigma for Gaussian blur.
-        intensity_threshold: Minimum intensity for edge pixels.
-
-    Returns:
-        PIL Image of extracted lineart (dark lines on white background).
+    Lightweight method that doesn't require model downloads.
+    Tuned for medical illustrations: finer sigma captures more anatomical detail.
     """
-    img_array = np.array(image).astype(np.float64)
-    gray = cv2.cvtColor(img_array.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float64)
+    img_array = np.array(image)
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY).astype(np.float64)
 
     # Difference of Gaussians for edge detection
     blur1 = cv2.GaussianBlur(gray, (0, 0), gaussian_sigma)
@@ -57,7 +50,10 @@ def extract_lineart(
 
     # Normalize and threshold
     dog = np.clip(dog, 0, 255)
-    dog = (dog / dog.max() * 255).astype(np.uint8) if dog.max() > 0 else dog.astype(np.uint8)
+    if dog.max() > 0:
+        dog = (dog / dog.max() * 255).astype(np.uint8)
+    else:
+        dog = dog.astype(np.uint8)
 
     # Invert so lines are dark on white (illustration-style)
     lineart = 255 - dog
@@ -66,38 +62,40 @@ def extract_lineart(
     return Image.fromarray(lineart).convert("RGB")
 
 
+def extract_adaptive_threshold(
+    image: Image.Image,
+    block_size: int = 11,
+    constant: int = 2,
+) -> Image.Image:
+    """
+    Extract structure using adaptive thresholding.
+
+    Good for: medical illustrations with varying contrast across regions
+    (e.g., cross-sectional anatomy where different tissue types have
+    different contrast levels).
+    """
+    img_array = np.array(image)
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+
+    # Apply bilateral filter first to reduce noise while preserving edges
+    filtered = cv2.bilateralFilter(gray, 9, 75, 75)
+
+    thresh = cv2.adaptiveThreshold(
+        filtered, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, block_size, constant,
+    )
+
+    return Image.fromarray(thresh).convert("RGB")
+
+
 def extract_lineart_model(image: Image.Image) -> Image.Image:
     """
-    Extract lineart using the controlnet_aux LineartDetector model.
+    Extract lineart using the controlnet_aux LineartDetector neural network.
 
-    This gives higher quality results than the DoG-based method but requires
-    downloading the model weights (~400MB).
-
-    Args:
-        image: Input PIL Image (RGB).
-
-    Returns:
-        PIL Image of extracted lineart.
+    Highest quality lineart extraction. Downloads model weights (~400MB)
+    on first call. Recommended for production use with medical illustrations.
     """
     from controlnet_aux import LineartDetector
 
     detector = LineartDetector.from_pretrained("lllyasviel/Annotators")
-    return detector(image)
-
-
-def extract_lineart_anime(image: Image.Image) -> Image.Image:
-    """
-    Extract anime-style lineart using the controlnet_aux LineartAnimeDetector.
-
-    Best for anime/manga-style illustrations.
-
-    Args:
-        image: Input PIL Image (RGB).
-
-    Returns:
-        PIL Image of extracted anime lineart.
-    """
-    from controlnet_aux import LineartAnimeDetector
-
-    detector = LineartAnimeDetector.from_pretrained("lllyasviel/Annotators")
     return detector(image)
